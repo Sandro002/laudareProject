@@ -1,0 +1,20 @@
+# --- DATI E IMMAGINI (NON CARICARE) ---
+I-Fn_BR_18/
+images_crop/
+dataset_crops/
+*.jpg
+*.png
+
+# --- FILE GENERATI DAL CODICE (NON CARICARE) ---
+*.npy
+*.npz
+
+# --- AMBIENTE VIRTUALE E CONFIG (NON CARICARE) ---
+.venv/
+__pycache__/
+.DS_Store
+.idea/
+.vscode/
+
+# --- FILE PYTHON TEMPORANEI ---
+*.pyc
