@@ -3,12 +3,15 @@ import os
 from tqdm import tqdm
 from PIL import Image
 import numpy as npy
-import sys
+import matplotlib.pyplot as plt
+import pandas as pd
+import seaborn as sns
 
 import torch
 import torch.nn as nn
 from torchvision import models, transforms, datasets
 from torch.utils.data import DataLoader
+from sklearn.manifold import TSNE
 
 #classi
 class Annotation:
@@ -58,6 +61,8 @@ CATEGORIES={
     6 : 'lines',
 }
 
+print(f"Categorie da analizzare: {CATEGORIES}")
+
 img_folder='I-Fn_BR_18'
 
 with open('I-Fn_BR_18\\annotations-diplomatic\\gt.json') as f:
@@ -85,6 +90,7 @@ for page in pages_dict.values():
 print('Applicando BoundingBox alle immagini...\n')
 
 OUTPUT_DIR = 'images_crop' #cartella delle immagini croppate, se non esiste la creo
+error=[]
 
 if not os.path.exists(OUTPUT_DIR):
     os.makedirs(OUTPUT_DIR)
@@ -113,7 +119,9 @@ for page in tqdm(pages_dict.values()):
 
                     imgCrop.save(savePath)
     except FileNotFoundError :
-        print(f'file {page.id} non trovato')
+        error.append(page.id)
+
+print(f"errore per i file con id {error}")
 
 
 #carico vgg16 con i pesi pre-allenati
@@ -121,15 +129,13 @@ for page in tqdm(pages_dict.values()):
 weights= models.VGG16_Weights.IMAGENET1K_V1
 model=models.vgg16(weights=weights)
 
-print('\n', len(model.classifier))
-
 #assegno una funzione identitè all'ultomo layer del modello 
 
 model.classifier[6] = nn.Identity() 
 
 model.eval()
 
-print("\nVGG16 caricato correttamente")
+print("\nVGG16 caricato correttamente\n")
 
 
 transform=transforms.Compose([
@@ -146,9 +152,6 @@ transform=transforms.Compose([
 dataset = datasets.ImageFolder(root=OUTPUT_DIR, transform=transform)
 
 dataLoader= DataLoader(dataset, batch_size=32, shuffle=False) 
-
-print(f"categorie: {dataset.classes}")
-
 
 
 
@@ -167,8 +170,8 @@ else:
 
 model = model.to(device)
 
-features_list = []
-labels_list = []
+featuresList = []
+labelsList = []
 
 print("Inizio estrazione features...")
 
@@ -182,11 +185,79 @@ with torch.no_grad():
         output = model(images)
         
         #salvo le features e le label in liste
-        features_list.append(output.cpu().numpy())
-        labels_list.append(labels.numpy())
+        featuresList.append(output.cpu().numpy())
+        labelsList.append(labels.numpy())
 
 
-featuresVgg = npy.concatenate(features_list)
-labelsVgg = npy.concatenate(labels_list)
+featuresVgg = npy.concatenate(featuresList)
 
 print(f"estrazine completata, matrice features: {featuresVgg.shape}") 
+
+
+
+
+try:
+    labelsVgg = npy.concatenate(labelsList)
+except ValueError:
+    temp_list = []
+    #se labelList è un insieme di numeri e lettere
+    for item in labelsList:
+        if hasattr(item, '__iter__') and not isinstance(item, str):
+            #se è una lsita prendo il contenuto
+            temp_list.extend(item)
+        else:
+            #se è un numero singolo lo aggiungo
+            temp_list.append(item) 
+    labelsVgg = npy.array(temp_list)
+
+#traduco gli id in categories per farli corrispondere con le Labels
+sorted_ids = sorted(CATEGORIES.keys())
+
+names_list = [CATEGORIES[k] for k in sorted_ids]
+labelNames = [names_list[int(i)] for i in labelsVgg]
+
+
+perplexities=[5,30,50,100]
+
+#creo la base per il plot
+fig, axes = plt.subplots(2, 2, figsize=(20, 16))
+fig.suptitle(f"Analisi t-SNE su Features VGG16",fontsize=24)
+axes = axes.flatten() 
+
+try:
+    features_matrix = npy.vstack(featuresList)
+except ValueError:
+    features_matrix = npy.concatenate(featuresList, axis=0)
+
+
+for i, perplexity in enumerate(perplexities):
+    tsne = TSNE(n_components=2, perplexity=perplexity, random_state=42, n_jobs=-1)
+    tsne_results = tsne.fit_transform(features_matrix)
+
+    plot= pd.DataFrame({
+        'x': tsne_results[:,0],
+        'y': tsne_results[:,1],
+        'Categoria': labelNames
+    })
+    sns.scatterplot(
+        data=plot,
+        x='x', y='y',
+        hue='Categoria',
+        palette='tab10',
+        s=60,
+        alpha=0.8,
+        ax=axes[i],
+        legend='full' if i == 0 else False
+    )
+    axes[i].set_title(f"Perplexity: {perplexity}", fontsize=18)
+    axes[i].set_axis_off()
+        
+    axes[i].set_title(f"Perplexity: {perplexity}", fontsize=18)
+    axes[i].set_axis_off()
+    
+
+plt.tight_layout()
+plt.subplots_adjust(top=0.92)
+RESULTSFOLDER="results"
+outputFilename = "tsne_vgg16.png"
+plt.savefig(os.path.join(RESULTSFOLDER, outputFilename), dpi=300)
