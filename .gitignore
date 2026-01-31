@@ -2,8 +2,6 @@
 I-Fn_BR_18/
 images_crop/
 dataset_crops/
-*.jpg
-*.png
 
 # --- FILE GENERATI DAL CODICE (NON CARICARE) ---
 *.npy
